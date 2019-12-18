@@ -5,7 +5,7 @@ Youtubeライブストリーミングのチャットで投票を行うための�
 初回実行時はYoutubeAPIを実行するためにGoogle OAuth2ログインを求められます。
 
 ```
-usage: %s -id video_id [-t voting_time] [choice1 choice2, ...]
+usage: youtubelivevote -id video_id [-t voting_time] [choice1 choice2, ...]
 ```
 - video_id: 配信URLに含まれているvideoID  
 
