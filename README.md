@@ -1,8 +1,28 @@
 # youtubelivevote
 Youtubeライブストリーミングのチャットで投票を行うためのツールです。
 
+1択での得票計算から任意の個数の選択肢での投票に対応しています。
+
+コマンド実行後の5秒後から指定した秒数の間のチャットメッセージのうち、選択肢の文字もしくは選択肢に振られた番号を意味する半角 1 ~ n が含まれているメッセージを投票とみなして集計します。（１アカウント一票で、一番最初のメッセージが有効になります）
+
+# install
+```
+go get -u github.com/umineko1996/youtubelivevote
+```
+
 # 使い方
+
+## 初回実行時
 初回実行時はYoutubeAPIを実行するためにGoogle OAuth2ログインを求められます。
+
+以下のエラーが発生する場合はログインするアカウントでYoutubeのライブストリーミングを有効にする必要があります。
+```
+"code": 403, "message": "The user is not enabled for live streaming."
+```
+https://www.youtube.com/features  
+https://stackoverflow.com/questions/32362725/youtube-streaming-api-says-user-is-not-enabled-for-live-streaming
+
+## usage
 
 ```
 usage: youtubelivevote -id video_id [-t voting_time] [-s start_wait_time] [choice1 choice2, ...]
@@ -29,8 +49,8 @@ video_id: ABCDEFG
 ```
 例
 youtubelivevote.exe -id ABCDEFG -t 30 あ い う
-start voting in 3s seconds...
-if you stop vote halfway, please press enter key // 投票途中で締め切りたい場合、エンターキーを入力すれば次のポーリングタイミングで締め切る
+youtubelivevote.exe -id uHHdlb9qzZs -t 30 あ い う
+start voting in 3s seconds... // コマンド実行から3秒後のコメントから集計を始まる
 1."あ" // 引数に与えられた選択肢と対応する数字が表示される
 2."い"
 3."う"
@@ -38,11 +58,11 @@ if you stop vote halfway, please press enter key // 投票途中で締め切り�
 vote start!
 --------------------
 time remaining 30 sec
-delay 5 sec... // 5秒待機後チャットを取得し、その間のチャットのうち投票にカウントされたチャットを表示する
-vote 1."あ" ユーザ名(userID) text:"おえういあ" // 一番初めにチェックされる「あ」にマッチする
+delay 5 sec...
+vote 1."あ"! ユーザ名(userID) text:"あいうえお" // コメント「あいうえお」の場合、一番初めの文字である「あ」にマッチする
 time remaining 25 sec
-vote 1."あ" ユーザ名(userID) text:"1" // 「あ」に対して振られ番号「1」にマッチする
-vote 2."い" ユーザ名(userID) text:"2" // 一人一度の投票なのですべてのuserIDは一意になる
+vote 1."あ"! ユーザ名(userID) text:"1" // 「あ」に対して振られ番号「1」にマッチする
+vote 2."い"! ユーザ名(userID) text:"2" // 一人一度の投票なのですべてのuserIDは一意になる
 delay 5 sec...
 
 （中略）// 5秒毎に同様の処理が実行される
@@ -52,9 +72,9 @@ delay 5 sec...
 --------------------
 vote end!
 
-total vote 3 // 選択肢全体への投票数
+total vote 3
 --------------------
-1."あ" vote 2 // それぞれの選択肢への投票数
+1."あ" vote 2
 2."い" vote 1
 3."う" vote 0
 --------------------
