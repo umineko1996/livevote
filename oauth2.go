@@ -75,7 +75,7 @@ func NewClient() (*http.Client, error) {
 		RedirectURL:  "http://" + localhost,
 		ClientID:     "938824775883-ee11d5hu14sqn6sd693lv7t5qjonubaq.apps.googleusercontent.com",
 		ClientSecret: "reUD6ux-NbcIJK_UiCaDtNle",
-		Scopes:       []string{"email", youtube.YoutubeScope},
+		Scopes:       []string{"email", youtube.YoutubeReadonlyScope},
 		Endpoint:     google.Endpoint,
 	}
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -53,7 +54,7 @@ func MessageHandle(message *youtube.LiveChatMessage) error {
 		if strings.Contains(text, c.number) || strings.Contains(text, c.value) {
 			votes[c.value]++
 			voter[userID] = true
-			fmt.Printf("vote %s! %s(&%s) text:\"%s\"\n", c, message.AuthorDetails.DisplayName, userID, text)
+			fmt.Printf("vote %s %s(&%s) text:\"%s\"\n", c, message.AuthorDetails.DisplayName, userID, text)
 			break
 		}
 	}
@@ -61,9 +62,9 @@ func MessageHandle(message *youtube.LiveChatMessage) error {
 }
 
 func run() error {
-	videoID, voteTime := getArgs()
+	videoID, voteTime, startTime := getArgs()
 	if videoID == "" || voteTime == 0 {
-		return fmt.Errorf("usage: %s -id video_id [-t voting_time] [choice1 choice2, ...]", path.Base(os.Args[0]))
+		return fmt.Errorf("usage: %s -id video_id [-t voting_time] [-s start_wait_time] [choice1 choice2, ...]", path.Base(os.Args[0]))
 	}
 
 	client, err := NewClient()
@@ -82,8 +83,8 @@ func run() error {
 		if err != nil {
 			return "", fmt.Errorf("get broadcast: %w", err)
 		} else if len(resp.Items) == 0 {
-			b, _ := resp.MarshalJSON()
-			fmt.Println(string(b))
+			// b, _ := resp.MarshalJSON()
+			// fmt.Println(string(b))
 			return "", errors.New("get broadcast: Not Found")
 		}
 		return resp.Items[0].LiveStreamingDetails.ActiveLiveChatId, nil
@@ -94,13 +95,15 @@ func run() error {
 		return err
 	}
 
-	fmt.Println("start voting in 5s seconds...")
+	fmt.Printf("start voting in %ds seconds...\n", startTime)
+	fmt.Println("if you stop vote halfway, please press enter key")
 	for _, c := range choices {
 		fmt.Println(c)
 	}
 	fmt.Println("")
-	time.Sleep(5 * time.Second)
+	time.Sleep(time.Duration(startTime) * time.Second)
 	fmt.Println("vote start!")
+	fmt.Println("--------------------")
 
 	// 投票開始用のページ取得
 	resp, err := service.LiveChatMessages.List(chatID, "id").Do()
@@ -112,6 +115,11 @@ func run() error {
 	next := resp.NextPageToken
 	delay := 5
 	loop := voteTime / delay
+	ticker := time.NewTicker(time.Duration(delay) * time.Second)
+	defer ticker.Stop()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	input := makeInputWaitCh(ctx)
 
 	if (voteTime % delay) != 0 {
 		loop++
@@ -119,7 +127,14 @@ func run() error {
 	for i := 0; i < loop; i++ {
 		fmt.Printf("time remaining %d sec\n", (loop-i)*delay)
 		fmt.Printf("delay %d sec...\n", delay)
-		time.Sleep(time.Duration(delay) * time.Second)
+
+		select {
+		case <-input:
+			i = loop
+			cancel()
+			time.Sleep(time.Duration(resp.PollingIntervalMillis) * time.Millisecond)
+		case <-ticker.C:
+		}
 
 		// コメント取得
 		resp, err := call.PageToken(next).MaxResults(2000).Do()
@@ -133,11 +148,15 @@ func run() error {
 		next = resp.NextPageToken
 		//delay := resp.PollingIntervalMillis
 	}
+	fmt.Println("--------------------")
 
 	max := 0
 	maxChoice := []Choice{}
 
 	fmt.Println("vote end!")
+	if ctx.Err() != nil {
+		fmt.Println("vote ended press enter key")
+	}
 	fmt.Println("")
 
 	fmt.Printf("total vote %d\n", len(voter))
@@ -162,14 +181,37 @@ func run() error {
 	return nil
 }
 
-func getArgs() (videoID string, voteTime int) {
+func makeInputWaitCh(ctx context.Context) <-chan string {
+	ch := make(chan string)
+
+	go func() {
+		defer close(ch)
+		b := make([]byte, 1)
+		for {
+			select {
+			case <-ctx.Done():
+				break
+			default:
+			}
+			// select待機だと待機中に入力受け付けられないっぽいのでスリープを使う
+			time.Sleep(100 * time.Millisecond)
+			os.Stdin.Read(b)
+			ch <- string(b)
+		}
+	}()
+
+	return ch
+}
+
+func getArgs() (videoID string, voteTime, startTime int) {
 	flag.StringVar(&videoID, "id", "", "youtube video id")
 	flag.IntVar(&voteTime, "t", 30, "voting time. default 30sec")
+	flag.IntVar(&startTime, "s", 3, "wait time before start voting. default 3sec")
 	flag.Parse()
 
 	if flag.NArg() != 0 {
 		choices = NewChoices(flag.Args())
 	}
 
-	return videoID, voteTime
+	return videoID, voteTime, startTime
 }
