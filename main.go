@@ -101,7 +101,6 @@ func run() error {
 		fmt.Println(c)
 	}
 	fmt.Println("")
-	time.Sleep(time.Duration(startTime) * time.Second)
 	fmt.Println("vote start!")
 	fmt.Println("--------------------")
 
@@ -110,13 +109,14 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("get livechat: %w", err)
 	}
+	time.Sleep(time.Duration(resp.PollingIntervalMillis) * time.Millisecond)
 
 	call := service.LiveChatMessages.List(chatID, "snippet, AuthorDetails")
 	next := resp.NextPageToken
 	delay := 5
 	loop := voteTime / delay
-	ticker := time.NewTicker(time.Duration(delay) * time.Second)
-	defer ticker.Stop()
+	timer := time.NewTimer(0)
+	defer timer.Stop()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	input := makeInputWaitCh(ctx)
@@ -125,15 +125,22 @@ func run() error {
 		loop++
 	}
 	for i := 0; i < loop; i++ {
+		delay = 5
+		delayMs := int64(delay * 1000)
+		if resp.PollingIntervalMillis > int64(delay)*1000 {
+			delayMs = resp.PollingIntervalMillis
+			delay = int(delayMs / 1000)
+		}
+		timer.Reset(time.Duration(delayMs) * time.Millisecond)
+
 		fmt.Printf("time remaining %d sec\n", (loop-i)*delay)
 		fmt.Printf("delay %d sec...\n", delay)
-
 		select {
 		case <-input:
 			i = loop
 			cancel()
 			time.Sleep(time.Duration(resp.PollingIntervalMillis) * time.Millisecond)
-		case <-ticker.C:
+		case <-timer.C:
 		}
 
 		// コメント取得
@@ -145,8 +152,8 @@ func run() error {
 		for _, item := range resp.Items {
 			MessageHandle(item)
 		}
+
 		next = resp.NextPageToken
-		//delay := resp.PollingIntervalMillis
 	}
 	fmt.Println("--------------------")
 
