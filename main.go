@@ -95,49 +95,54 @@ func run() error {
 		return err
 	}
 
-	fmt.Printf("start voting in %ds seconds...\n", startTime)
+	fmt.Printf("start voting in %ds...\n", startTime)
 	fmt.Println("if you stop vote halfway, please press enter key")
 	for _, c := range choices {
 		fmt.Println(c)
 	}
+	for i := startTime; i > 0; i-- {
+		fmt.Printf("   %d\n", i)
+		time.Sleep(1 * time.Second)
+	}
 	fmt.Println("")
-	fmt.Println("vote start!")
-	fmt.Println("--------------------")
 
 	// 投票開始用のページ取得
 	resp, err := service.LiveChatMessages.List(chatID, "id").Do()
 	if err != nil {
 		return fmt.Errorf("get livechat: %w", err)
 	}
-	time.Sleep(time.Duration(resp.PollingIntervalMillis) * time.Millisecond)
 
 	call := service.LiveChatMessages.List(chatID, "snippet, AuthorDetails")
 	next := resp.NextPageToken
 	delay := 5
-	loop := voteTime / delay
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	input := makeInputWaitCh(ctx)
+	elapsedTime := 0
 
-	if (voteTime % delay) != 0 {
-		loop++
-	}
-	for i := 0; i < loop; i++ {
+	fmt.Println("vote start!")
+	fmt.Println("--------------------")
+
+	for i := 0; elapsedTime < voteTime; i++ {
 		delay = 5
 		delayMs := int64(delay * 1000)
 		if resp.PollingIntervalMillis > int64(delay)*1000 {
 			delayMs = resp.PollingIntervalMillis
 			delay = int(delayMs / 1000)
 		}
+		if !timer.Stop() {
+			<-timer.C
+		}
 		timer.Reset(time.Duration(delayMs) * time.Millisecond)
 
-		fmt.Printf("time remaining %d sec\n", (loop-i)*delay)
+		fmt.Printf("time remaining %d sec\n", voteTime-elapsedTime)
 		fmt.Printf("delay %d sec...\n", delay)
+		elapsedTime += delay
 		select {
 		case <-input:
-			i = loop
+			elapsedTime = voteTime
 			cancel()
 			time.Sleep(time.Duration(resp.PollingIntervalMillis) * time.Millisecond)
 		case <-timer.C:
