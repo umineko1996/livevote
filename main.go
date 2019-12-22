@@ -43,6 +43,11 @@ var votes = make(map[string]int)
 var choices = NewChoices([]string{"1", "2"})
 
 func MessageHandle(message *youtube.LiveChatMessage) error {
+	if message.Snippet.TextMessageDetails == nil {
+		// スパチャなどで通常コメントではない場合
+		return nil
+	}
+
 	userID, text := message.AuthorDetails.ChannelId, message.Snippet.TextMessageDetails.MessageText
 
 	if voter[userID] {
@@ -101,9 +106,10 @@ func run() error {
 		fmt.Println(c)
 	}
 	for i := startTime; i > 0; i-- {
-		fmt.Printf("   %d\n", i)
+		fmt.Printf("%d ", i)
 		time.Sleep(1 * time.Second)
 	}
+	fmt.Println("")
 	fmt.Println("")
 
 	// 投票開始用のページ取得
@@ -133,7 +139,10 @@ func run() error {
 			delay = int(delayMs / 1000)
 		}
 		if !timer.Stop() {
-			<-timer.C
+			select {
+			case <-timer.C:
+			default:
+			}
 		}
 		timer.Reset(time.Duration(delayMs) * time.Millisecond)
 
