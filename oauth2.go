@@ -73,8 +73,8 @@ func getToken(config *oauth2.Config) (*oauth2.Token, error) {
 func NewClient() (*http.Client, error) {
 	config := &oauth2.Config{
 		RedirectURL:  "http://" + localhost,
-		ClientID:     "938824775883-ee11d5hu14sqn6sd693lv7t5qjonubaq.apps.googleusercontent.com",
-		ClientSecret: "reUD6ux-NbcIJK_UiCaDtNle",
+		ClientID:     "XXXXXXXXXXXXXXXXXX.apps.googleusercontent.com",
+		ClientSecret: "XXXXXXXXXXXXXXXXXX",
 		Scopes:       []string{"email", youtube.YoutubeReadonlyScope},
 		Endpoint:     google.Endpoint,
 	}

@@ -38,19 +38,20 @@ func NewChoices(choices []string) []Choice {
 	return cs
 }
 
-var voter = make(map[string]bool)
+var voter = make(map[string]int)
 var votes = make(map[string]int)
-var choices = NewChoices([]string{"1", "2"})
+var choices = NewChoices([]string{"１", "２"})
+var multiple = 1
 
 func MessageHandle(message *youtube.LiveChatMessage) error {
-	if message.Snippet.TextMessageDetails == nil {
+	if message.Snippet.TextMessageDetails == nil || message.AuthorDetails == nil {
 		// スパチャなどで通常コメントではない場合
 		return nil
 	}
 
 	userID, text := message.AuthorDetails.ChannelId, message.Snippet.TextMessageDetails.MessageText
 
-	if voter[userID] {
+	if voter[userID] >= multiple {
 		// 投票済み
 		return nil
 	}
@@ -58,7 +59,7 @@ func MessageHandle(message *youtube.LiveChatMessage) error {
 		// 選択肢の単語を含んでいれば投票数をプラス
 		if strings.Contains(text, c.number) || strings.Contains(text, c.value) {
 			votes[c.value]++
-			voter[userID] = true
+			voter[userID]++
 			fmt.Printf("vote %s %s(&%s) text:\"%s\"\n", c, message.AuthorDetails.DisplayName, userID, text)
 			break
 		}
@@ -228,6 +229,7 @@ func getArgs() (videoID string, voteTime, startTime int) {
 	flag.StringVar(&videoID, "id", "", "youtube video id")
 	flag.IntVar(&voteTime, "t", 30, "voting time. default 30sec")
 	flag.IntVar(&startTime, "s", 3, "wait time before start voting. default 3sec")
+	flag.IntVar(&multiple, "m", 1, "enable multiple votes")
 	flag.Parse()
 
 	if flag.NArg() != 0 {
