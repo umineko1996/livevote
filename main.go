@@ -33,17 +33,6 @@ type arguments struct {
 	choice        []string
 }
 
-type VoteManager struct {
-	VotingTime int
-	Multiple   int
-	Choices    []Choice
-	voter      map[string]int
-	votes      map[string]int
-	Ctx        context.Context    // ポーリングコンテキスト
-	Cancel     context.CancelFunc // ポーリングコンテキストキャンセル関数
-	timeout    context.Context    // 投票時間管理コンテキスト
-}
-
 type Choice struct {
 	number string
 	value  string
@@ -62,18 +51,71 @@ func (c Choice) String() string {
 	return c.number + ".\"" + c.value + "\""
 }
 
+func (c Choice) IsSelected(ballot string) bool {
+	return strings.Contains(ballot, c.number) || strings.Contains(ballot, c.value)
+}
+
+type VoteManager struct {
+	votingTime  int
+	multiple    int
+	countdown   int
+	choice      []Choice
+	voterList   map[string]int
+	votes       map[Choice]int
+	totalBallot int
+	ctx         context.Context    // ポーリングコンテキスト
+	cancel      context.CancelFunc // ポーリングコンテキストキャンセル関数
+	timeout     context.Context    // 投票時間管理コンテキスト
+}
+
+func NewVoteManager(votingTime, multiple, countdown int, choice []string) *VoteManager {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &VoteManager{
+		ctx:         ctx,
+		cancel:      cancel,
+		votingTime:  votingTime,
+		multiple:    multiple,
+		countdown:   countdown,
+		totalBallot: 0,
+		choice:      NewChoices(choice),
+		voterList:   make(map[string]int),
+		votes:       make(map[Choice]int),
+	}
+}
+
+func (vm *VoteManager) Ctx() context.Context {
+	return vm.ctx
+}
+
+func (vm *VoteManager) isVoting() bool {
+	return vm.ctx.Err() == nil
+}
+
+func (vm *VoteManager) EndVoting() {
+	vm.cancel()
+}
+
+func (vm *VoteManager) Vote(c Choice, voter string) {
+	vm.votes[c]++
+	vm.voterList[voter]++
+	vm.totalBallot++
+}
+
+func (vm *VoteManager) hasBallot(voter string) bool {
+	return vm.voterList[voter] < vm.multiple
+}
+
 func (vm *VoteManager) MessageHandle(message *youtube.LiveChatMessage) {
 	userID, text := message.AuthorDetails.ChannelId, message.Snippet.DisplayMessage
-	fmt.Printf("%s: %s\n", message.AuthorDetails.DisplayName, text)
-	if vm.voter[userID] >= vm.Multiple {
+	// fmt.Printf("%s: %s\n", message.AuthorDetails.DisplayName, text)
+	if !vm.hasBallot(userID) {
 		// 投票済み
 		return
 	}
-	for _, c := range vm.Choices {
+	for _, c := range vm.choice {
 		// 選択肢の単語を含んでいれば投票数をプラス
-		if strings.Contains(text, c.number) || strings.Contains(text, c.value) {
-			vm.votes[c.value]++
-			vm.voter[userID]++
+		if c.IsSelected(text) {
+			vm.Vote(c, userID)
 			fmt.Printf("vote %s %s(&%s) text:\"%s\"\n", c, message.AuthorDetails.DisplayName, userID, text)
 			break
 		}
@@ -84,14 +126,13 @@ func (vm *VoteManager) MessageHandle(message *youtube.LiveChatMessage) {
 func (vm *VoteManager) IntervalHandle(pollingIntervalMillis int64) {
 	if vm.timeout == nil {
 		// ハンドラの初回実行時
-		fmt.Println("vote start!")
-		fmt.Println("--------------------")
+		vm.PrintStartMessage()
 
 		// 投票タイマーをセット
-		votingTime := time.Duration(vm.VotingTime) * time.Second
-		votingCtx, cancel := context.WithTimeout(vm.Ctx, votingTime)
+		votingTime := time.Duration(vm.votingTime) * time.Second
+		votingCtx, cancel := context.WithTimeout(vm.ctx, votingTime)
 		go func() {
-			defer vm.Cancel()
+			defer vm.EndVoting()
 			defer cancel()
 			<-votingCtx.Done()
 		}()
@@ -102,89 +143,100 @@ func (vm *VoteManager) IntervalHandle(pollingIntervalMillis int64) {
 		int(t.Sub(time.Now()).Seconds()), pollingIntervalMillis)
 }
 
+func (vm *VoteManager) StartInterruptionProcess() {
+	go func() {
+		b := make([]byte, 1)
+		for vm.isVoting() {
+			time.Sleep(100 * time.Millisecond)
+			os.Stdin.Read(b)
+			if len(b) != 0 {
+				vm.EndVoting()
+			}
+		}
+	}()
+}
+
+func (vm *VoteManager) PrintPreMessage() {
+	fmt.Println("*-------------------")
+	fmt.Println("|Choice")
+	fmt.Println("*-------------------")
+	for _, c := range vm.choice {
+		fmt.Println("|", c)
+	}
+	fmt.Println("*-------------------")
+	fmt.Println("if you stop vote halfway, please press enter key")
+	if vm.countdown > 0 {
+		fmt.Printf("start voting after %ds...\n", vm.countdown)
+		for i := vm.countdown; i > 0; i-- {
+			fmt.Printf("%d ", i)
+			time.Sleep(1 * time.Second)
+		}
+		fmt.Println("")
+	}
+	fmt.Println("")
+}
+
+func (vm *VoteManager) PrintStartMessage() {
+	fmt.Println(">------------------<")
+	fmt.Println("   start voting!")
+	fmt.Println(">------------------<")
+}
+
+func (vm *VoteManager) PrintEndMessage() {
+	fmt.Println(">------------------<")
+	fmt.Println("   end voting!")
+	fmt.Println(">------------------<")
+	fmt.Println("")
+}
+
+func (vm *VoteManager) PrintVoteResultMessage() {
+	fmt.Println("*-------------------")
+	fmt.Println("|Result")
+	fmt.Println("*-------------------")
+	max := 0
+	maxChoice := []Choice{}
+	for _, c := range vm.choice {
+		vote := vm.votes[c]
+		if vote > max {
+			max = vote
+			maxChoice = []Choice{c}
+		} else if vote == max {
+			maxChoice = append(maxChoice, c)
+		}
+		fmt.Printf("| %s vote %d\n", c, vote)
+	}
+	fmt.Println("*-------------------")
+	fmt.Printf("| total ballot %d\n", vm.totalBallot)
+	fmt.Println("*-------------------")
+	fmt.Println("|Winning")
+	fmt.Println("*-------------------")
+	for _, mc := range maxChoice {
+		fmt.Println("| ", mc)
+	}
+	fmt.Println("*-------------------")
+}
+
 func run() error {
 	args := getArgs()
 	if err := validateArgs(args); err != nil {
 		return err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	voteManager := &VoteManager{
-		Ctx:        ctx,
-		Cancel:     cancel,
-		VotingTime: args.votingTime,
-		Multiple:   args.multiple,
-		Choices:    NewChoices(args.choice),
-		voter:      make(map[string]int),
-		votes:      make(map[string]int),
-	}
-
+	voteManager := NewVoteManager(args.votingTime, args.multiple, args.countdownTime, args.choice)
 	handler, err := livechathandler.New(args.videoID, livechathandler.WithIntervalHandler(voteManager))
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("start voting after %ds...\n", args.countdownTime)
-	fmt.Println("if you stop vote halfway, please press enter key")
-	for _, c := range voteManager.Choices {
-		fmt.Println(c)
-	}
-	for i := args.countdownTime; i > 0; i-- {
-		fmt.Printf("%d ", i)
-		time.Sleep(1 * time.Second)
-	}
-	fmt.Println("")
-	fmt.Println("")
-
+	voteManager.PrintPreMessage()
 	// polling end with press enter
-	go func() {
-		b := make([]byte, 1)
-		for {
-			select {
-			case <-ctx.Done():
-				break
-			default:
-			}
-			time.Sleep(100 * time.Millisecond)
-			os.Stdin.Read(b)
-			if len(b) != 0 {
-				cancel()
-			}
-		}
-	}()
+	voteManager.StartInterruptionProcess()
 
-	handler.Polling(ctx, voteManager)
+	handler.Polling(voteManager.Ctx(), voteManager)
 
-	// fmt.Println("--------------------")
+	voteManager.PrintEndMessage()
+	voteManager.PrintVoteResultMessage()
 
-	// max := 0
-	// maxChoice := []Choice{}
-
-	// fmt.Println("vote end!")
-	// if ctx.Err() != nil {
-	// 	fmt.Println("vote ended press enter key")
-	// }
-	// fmt.Println("")
-
-	// fmt.Printf("total vote %d\n", len(voteManager.voter))
-	// fmt.Println("--------------------")
-	// for _, c := range voteManager.Choices {
-	// 	vote := voteManager.voter[c.value]
-	// 	if vote > max {
-	// 		max = vote
-	// 		maxChoice = []Choice{c}
-	// 	} else if vote == max {
-	// 		maxChoice = append(maxChoice, c)
-	// 	}
-	// 	fmt.Printf("%s vote %d\n", c, vote)
-	// }
-	// fmt.Println("--------------------")
-	// fmt.Printf("Winning vote %d\n", max)
-	// for _, mc := range maxChoice {
-	// 	fmt.Println(mc)
-	// }
 	fmt.Println()
 
 	return nil
@@ -193,7 +245,7 @@ func run() error {
 func getArgs() (args arguments) {
 	flag.StringVar(&args.videoID, "id", "", "youtube video id")
 	flag.IntVar(&args.votingTime, "t", 30, "voting time. default 30sec")
-	flag.IntVar(&args.countdownTime, "s", 3, "wait time before start voting. default 3sec")
+	flag.IntVar(&args.countdownTime, "s", 0, "wait time before start voting. default 0sec")
 	flag.IntVar(&args.multiple, "m", 1, "enable multiple votes. number of votes per a user")
 	flag.Parse()
 
