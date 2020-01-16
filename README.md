@@ -9,9 +9,6 @@ Youtubeライブストリーミングのチャットで投票を行うための�
 
 ※配信中のチャットでのみ使用可能です。過去のチャットや、アーカイブのチャットに対しては使用できません。
 
-ライブチャットの取得処理は新しいリポジトリにまとめました。このリポジトリからは削除予定です  
-https://github.com/umineko1996/livechathandler
-
 # install
 ```
 go get -u github.com/umineko1996/youtubelivevote
